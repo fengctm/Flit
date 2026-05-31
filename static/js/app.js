@@ -127,15 +127,10 @@
     }
 
     /**
-     * 启动心跳定时器（每 30 秒发送 ping）
+     * 启动心跳（服务端使用 WebSocket Ping 帧，浏览器自动回复 Pong，无需应用层心跳）
      */
     function startHeartbeat() {
-        stopHeartbeat();
-        heartbeatTimer = setInterval(function () {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                send({ type: 'ping' });
-            }
-        }, 30000);
+        // no-op: 服务端 writePump 每 30 秒发送 WebSocket Ping 帧
     }
 
     /**
@@ -411,7 +406,7 @@
     function handleDeviceClick(deviceId, event) {
         if (event.button !== 0) return;
 
-        // Ctrl+点击 或 多选模式：切换选中
+        // Ctrl+点击 或 多选模式：切换选中，不打开文件选择器
         if (event.ctrlKey || event.metaKey || multiSelectMode) {
             if (!multiSelectMode) {
                 enterMultiSelectMode();
@@ -420,15 +415,18 @@
             return;
         }
 
-        // 单击：选中/取消选中该设备
-        if (selectedDevices.has(deviceId)) {
-            selectedDevices.delete(deviceId);
-            Flit.ui.updateDeviceSelection(deviceId, false);
-        } else {
-            selectedDevices.add(deviceId);
-            Flit.ui.updateDeviceSelection(deviceId, true);
+        // 单击：选中该设备并直接打开文件选择器
+        selectedDevices.clear();
+        selectedDevices.add(deviceId);
+        Flit.ui.clearDeviceSelection();
+        Flit.ui.updateDeviceSelection(deviceId, true);
+        Flit.ui.updateFabVisibility(1);
+
+        // 直接打开文件选择器
+        var fileInput = document.getElementById('fileInput');
+        if (fileInput) {
+            fileInput.click();
         }
-        Flit.ui.updateFabVisibility(selectedDevices.size);
     }
 
     /**
