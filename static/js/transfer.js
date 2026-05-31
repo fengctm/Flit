@@ -238,9 +238,12 @@
             }
 
             if (offset >= totalSize) {
-                // 所有分片已发送完毕
+                // 所有分片已发送完毕，通知接收端
                 console.log('[Transfer] 文件', state.fileName, '所有分片已发送');
-                // 不立即标记完成，等待接收方确认
+                sendControlMessage(controlChannel, {
+                    cmd: 'complete',
+                    fileId: state.fileId
+                });
                 return;
             }
 
@@ -494,6 +497,9 @@
         // 如果有 File System Access API，尝试写入
         if (state.writableStream) {
             flushPendingChunks(state);
+        } else {
+            // Blob 模式：更新已接收字节数（用于进度显示）
+            state.transferred += decoded.data.byteLength;
         }
     }
 
