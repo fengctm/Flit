@@ -78,6 +78,13 @@
         ws.onmessage = function (event) {
             try {
                 const msg = JSON.parse(event.data);
+                // 服务端消息格式: {"type":"x","data":{...}}
+                // 将 data 属性合并到顶层，方便下游处理
+                if (msg.data && typeof msg.data === 'object') {
+                    Object.keys(msg.data).forEach(function (k) {
+                        if (!(k in msg)) msg[k] = msg.data[k];
+                    });
+                }
                 dispatchMessage(msg);
             } catch (e) {
                 console.error('[WS] 消息解析失败:', e);
@@ -189,7 +196,7 @@
                 handleRegistered(msg.data);
                 break;
             case 'error':
-                console.error('[Server] 错误:', msg.message);
+                console.error('[Server] 错误:', msg.message || msg.data);
                 Flit.ui.toast(msg.message || '服务器错误', 'error');
                 break;
             default:
@@ -204,6 +211,7 @@
      */
     function registerDevice() {
         const deviceInfo = getDeviceInfo();
+        // 发送平铺格式（服务端 RegisterData 期望 device 在顶层）
         send({
             type: 'register',
             device: deviceInfo
@@ -263,12 +271,13 @@
         devices.clear();
         if (data.devices && Array.isArray(data.devices)) {
             data.devices.forEach(function (device) {
-                devices.set(device.id, device);
+                // 过滤掉自己的设备
+                if (device.id !== selfDeviceId) {
+                    devices.set(device.id, device);
+                }
             });
         }
-        // 清理选中集合中不存在的设备
         cleanSelection();
-        // 更新 UI
         Flit.ui.renderDeviceGrid(devices);
         Flit.ui.updateDeviceCount(devices.size);
     }
@@ -278,7 +287,7 @@
      * @param {{device: DeviceInfo}} data
      */
     function handleDeviceOnline(data) {
-        if (data.device) {
+        if (data.device && data.device.id !== selfDeviceId) {
             devices.set(data.device.id, data.device);
             cleanSelection();
             Flit.ui.renderDeviceGrid(devices);
@@ -400,10 +409,9 @@
      * @param {MouseEvent} event
      */
     function handleDeviceClick(deviceId, event) {
-        // 如果是右键或在传输区域，不处理
         if (event.button !== 0) return;
 
-        // Ctrl+点击 或 已处于多选模式：切换选中
+        // Ctrl+点击 或 多选模式：切换选中
         if (event.ctrlKey || event.metaKey || multiSelectMode) {
             if (!multiSelectMode) {
                 enterMultiSelectMode();
@@ -412,8 +420,15 @@
             return;
         }
 
-        // 长按检测：按下时记录，300ms 后检查是否移动
-        // 这里简化处理，直接在 mouseup 时判断
+        // 单击：选中/取消选中该设备
+        if (selectedDevices.has(deviceId)) {
+            selectedDevices.delete(deviceId);
+            Flit.ui.updateDeviceSelection(deviceId, false);
+        } else {
+            selectedDevices.add(deviceId);
+            Flit.ui.updateDeviceSelection(deviceId, true);
+        }
+        Flit.ui.updateFabVisibility(selectedDevices.size);
     }
 
     /**
@@ -522,18 +537,15 @@
                 Flit.ui.toast('尚未连接到服务器', 'error');
                 return;
             }
-            // 为每个目标设备发送请求
             targetDeviceIds.forEach(function (targetId) {
                 const fileInfos = files.map(function (f) {
                     return { name: f.name, size: f.size };
                 });
+                // 发送平铺格式（服务端 json.Unmarshal 直接解析顶层字段）
                 send({
                     type: 'send_request',
-                    data: {
-                        to: targetId,
-                        from: selfDeviceId,
-                        files: fileInfos
-                    }
+                    to: targetId,
+                    files: fileInfos
                 });
             });
         },
@@ -542,10 +554,8 @@
         acceptTransfer: function (fromDeviceId) {
             send({
                 type: 'send_response',
-                data: {
-                    to: fromDeviceId,
-                    accepted: true
-                }
+                to: fromDeviceId,
+                accepted: true
             });
         },
 
@@ -553,10 +563,8 @@
         rejectTransfer: function (fromDeviceId) {
             send({
                 type: 'send_response',
-                data: {
-                    to: fromDeviceId,
-                    accepted: false
-                }
+                to: fromDeviceId,
+                accepted: false
             });
         }
     };

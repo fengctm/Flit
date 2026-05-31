@@ -13,6 +13,7 @@ const (
 	MsgWebRTCOffer   = "webrtc_offer"
 	MsgWebRTCAnswer  = "webrtc_answer"
 	MsgICECandidate  = "ice_candidate"
+	MsgRegistered    = "registered"
 	MsgError         = "error"
 )
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,22 +16,24 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // allow all origins for LAN use
+		return true
 	},
 }
 
 // Client represents a connected WebSocket client
 type Client struct {
-	ID     string
-	Device DeviceInfo
-	Send   chan []byte
-	Hub    *Hub
-	Conn   *websocket.Conn
+	ID         string
+	Device     DeviceInfo
+	Send       chan []byte
+	Hub        *Hub
+	Conn       *websocket.Conn
+	Registered bool // true after client sends register message
 }
 
 // Hub maintains the set of active clients and broadcasts messages
 type Hub struct {
-	clients    map[string]*Client
+	clients    map[string]*Client // id -> client
+	ipClients  map[string]*Client // ip -> client (for dedup)
 	register   chan *Client
 	unregister chan *Client
 }
@@ -38,6 +41,7 @@ type Hub struct {
 func newHub() *Hub {
 	return &Hub{
 		clients:    make(map[string]*Client),
+		ipClients:  make(map[string]*Client),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 	}
@@ -47,34 +51,63 @@ func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.clients[client.ID] = client
-			// Send full device list to the new client
-			devices := make([]DeviceInfo, 0, len(h.clients))
-			for _, c := range h.clients {
-				devices = append(devices, c.Device)
+			// Dedup: if same IP already connected, close old connection
+			if old, ok := h.ipClients[client.Device.IP]; ok && old.ID != client.ID {
+				log.Printf("[替换] %s (%s) 被新连接替换", old.Device.Name, old.Device.IP)
+				delete(h.clients, old.ID)
+				close(old.Send)
+				old.Conn.Close()
 			}
-			listMsg := buildMessage(MsgDeviceList, DeviceListData{Devices: devices})
-			client.Send <- listMsg
 
-			// Broadcast new device to all others
-			onlineMsg := buildMessage(MsgDeviceOnline, DeviceOnlineData{Device: client.Device})
-			for id, c := range h.clients {
-				if id != client.ID {
-					c.Send <- onlineMsg
-				}
-			}
-			log.Printf("[上线] %s (%s)", client.Device.Name, client.Device.IP)
+			h.clients[client.ID] = client
+			h.ipClients[client.Device.IP] = client
+			// Do NOT broadcast yet — wait for register message with device name
 
 		case client := <-h.unregister:
 			if _, ok := h.clients[client.ID]; ok {
 				delete(h.clients, client.ID)
-				close(client.Send)
-				offlineMsg := buildMessage(MsgDeviceOffline, DeviceOfflineData{DeviceID: client.ID})
-				for _, c := range h.clients {
-					c.Send <- offlineMsg
+				// Only remove from ipClients if this client still owns it
+				if cur, exists := h.ipClients[client.Device.IP]; exists && cur.ID == client.ID {
+					delete(h.ipClients, client.Device.IP)
 				}
-				log.Printf("[离线] %s (%s)", client.Device.Name, client.Device.IP)
+				close(client.Send)
+
+				if client.Registered {
+					offlineMsg := buildMessage(MsgDeviceOffline, DeviceOfflineData{DeviceID: client.ID})
+					for _, c := range h.clients {
+						if c.Registered {
+							c.Send <- offlineMsg
+						}
+					}
+					log.Printf("[离线] %s (%s)", client.Device.Name, client.Device.IP)
+				}
 			}
+		}
+	}
+}
+
+// broadcastDeviceList sends the full device list to all registered clients
+func (h *Hub) broadcastDeviceList() {
+	devices := make([]DeviceInfo, 0)
+	for _, c := range h.clients {
+		if c.Registered {
+			devices = append(devices, c.Device)
+		}
+	}
+	listMsg := buildMessage(MsgDeviceList, DeviceListData{Devices: devices})
+	for _, c := range h.clients {
+		if c.Registered {
+			c.Send <- listMsg
+		}
+	}
+}
+
+// broadcastDeviceOnline notifies all registered clients about a new device
+func (h *Hub) broadcastDeviceOnline(device DeviceInfo) {
+	onlineMsg := buildMessage(MsgDeviceOnline, DeviceOnlineData{Device: device})
+	for _, c := range h.clients {
+		if c.Registered && c.Device.ID != device.ID {
+			c.Send <- onlineMsg
 		}
 	}
 }
@@ -150,15 +183,40 @@ func (c *Client) handleMessage(raw []byte) {
 		}
 		c.Device.Name = name + " / " + c.Device.IP
 		c.Device.OS = data.Device.OS
+		c.Registered = true
+
+		// Send registered response with client ID
+		regResp := buildMessage(MsgRegistered, struct {
+			ID string `json:"id"`
+		}{ID: c.ID})
+		c.Send <- regResp
+
+		// Send full device list to this client (including others)
+		devices := make([]DeviceInfo, 0)
+		for _, other := range c.Hub.clients {
+			if other.Registered && other.ID != c.ID {
+				devices = append(devices, other.Device)
+			}
+		}
+		listMsg := buildMessage(MsgDeviceList, DeviceListData{Devices: devices})
+		c.Send <- listMsg
+
+		// Broadcast new device to all other registered clients
+		c.Hub.broadcastDeviceOnline(c.Device)
+		log.Printf("[上线] %s (%s)", c.Device.Name, c.Device.IP)
 
 	case MsgSendRequest:
+		if !c.Registered {
+			c.sendError("请先注册")
+			return
+		}
 		var data SendRequestData
 		if err := json.Unmarshal(raw, &data); err != nil {
 			c.sendError("无效的发送请求")
 			return
 		}
 		data.From = c.ID
-		if target, ok := c.Hub.clients[data.To]; ok {
+		if target, ok := c.Hub.clients[data.To]; ok && target.Registered {
 			msg := buildMessage(MsgSendRequest, data)
 			target.Send <- msg
 		} else {
@@ -166,25 +224,32 @@ func (c *Client) handleMessage(raw []byte) {
 		}
 
 	case MsgSendResponse:
+		if !c.Registered {
+			c.sendError("请先注册")
+			return
+		}
 		var data SendResponseData
 		if err := json.Unmarshal(raw, &data); err != nil {
 			c.sendError("无效的响应")
 			return
 		}
-		if target, ok := c.Hub.clients[data.To]; ok {
+		if target, ok := c.Hub.clients[data.To]; ok && target.Registered {
 			resp := SendResponseData{To: data.To, From: c.ID, Accepted: data.Accepted}
 			msg := buildMessage(MsgSendResponse, resp)
 			target.Send <- msg
 		}
 
 	case MsgWebRTCOffer, MsgWebRTCAnswer, MsgICECandidate:
+		if !c.Registered {
+			c.sendError("请先注册")
+			return
+		}
 		var data WebRTCSignalData
 		if err := json.Unmarshal(raw, &data); err != nil {
 			c.sendError("无效的WebRTC信令")
 			return
 		}
-		if target, ok := c.Hub.clients[data.To]; ok {
-			// Inject sender ID and relay
+		if target, ok := c.Hub.clients[data.To]; ok && target.Registered {
 			envelope := struct {
 				Type      string          `json:"type"`
 				From      string          `json:"from"`
@@ -208,8 +273,20 @@ func (c *Client) handleMessage(raw []byte) {
 }
 
 func (c *Client) sendError(msg string) {
-	errMsg := buildMessageMsgpack(MsgError, ErrorData{Message: msg})
+	errMsg := buildMessage(MsgError, ErrorData{Message: msg})
 	c.Send <- errMsg
+}
+
+// normalizeIP converts IPv6 loopback to IPv4 format
+func normalizeIP(ip string) string {
+	if ip == "::1" || ip == "[::1]" {
+		return "127.0.0.1"
+	}
+	// Strip IPv6 brackets if present
+	if strings.HasPrefix(ip, "[") && strings.HasSuffix(ip, "]") {
+		ip = ip[1 : len(ip)-1]
+	}
+	return ip
 }
 
 func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
@@ -227,6 +304,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	if host, _, err := net.SplitHostPort(ip); err == nil {
 		ip = host
 	}
+	ip = normalizeIP(ip)
 
 	client := &Client{
 		ID: clientID,
@@ -254,8 +332,4 @@ func buildMessage(msgType string, data interface{}) []byte {
 	}{Type: msgType, Data: data}
 	out, _ := json.Marshal(msg)
 	return out
-}
-
-func buildMessageMsgpack(msgType string, data interface{}) []byte {
-	return buildMessage(msgType, data)
 }
