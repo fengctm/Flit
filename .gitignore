@@ -1,0 +1,6 @@
+.omc/
+flit
+flit.exe
+*.exe
+*.test
+*.out

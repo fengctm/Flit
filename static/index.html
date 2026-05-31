@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Flit - 局域网快传</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+    <!-- Top App Bar -->
+    <header class="top-bar">
+        <div class="top-bar-content">
+            <div class="top-bar-title">
+                <span class="logo">⚡</span>
+                <span>局域网快传</span>
+            </div>
+            <div class="top-bar-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span>连接中...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Device List -->
+        <section class="device-section">
+            <div class="section-header">
+                <h2>在线设备</h2>
+                <span class="device-count" id="deviceCount">0 台设备</span>
+            </div>
+            <div class="device-grid" id="deviceGrid">
+                <!-- Device cards will be inserted here -->
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">📱</div>
+                    <p>等待其他设备加入...</p>
+                    <p class="empty-hint">在同一局域网内打开此页面即可发现设备</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Transfer Tasks Section -->
+        <section class="transfer-section" id="transferSection" style="display: none;">
+            <div class="section-header">
+                <h2>传输任务</h2>
+                <button class="btn-text" id="clearCompleted">清除已完成</button>
+            </div>
+            <div class="transfer-list" id="transferList">
+                <!-- Transfer task cards will be inserted here -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Multi-select FAB -->
+    <button class="fab" id="sendFab" style="display: none;">
+        <span class="fab-icon">📤</span>
+        <span class="fab-label">发送文件</span>
+    </button>
+
+    <!-- Send Request Dialog -->
+    <dialog class="md-dialog" id="sendRequestDialog">
+        <div class="dialog-content">
+            <h3 class="dialog-title">文件发送请求</h3>
+            <div class="dialog-body">
+                <div class="sender-info" id="senderInfo"></div>
+                <div class="file-list" id="requestFileList"></div>
+                <div class="total-size" id="requestTotalSize"></div>
+            </div>
+            <div class="dialog-actions">
+                <button class="btn btn-outlined" id="rejectBtn">拒绝</button>
+                <button class="btn btn-filled" id="acceptBtn">接收</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Save Location Dialog (for File System Access API) -->
+    <dialog class="md-dialog" id="saveDialog">
+        <div class="dialog-content">
+            <h3 class="dialog-title">选择保存位置</h3>
+            <div class="dialog-body">
+                <p>大文件将直接写入磁盘，避免占用内存。</p>
+            </div>
+            <div class="dialog-actions">
+                <button class="btn btn-outlined" id="cancelSaveBtn">取消</button>
+                <button class="btn btn-filled" id="chooseSaveBtn">选择文件夹</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="fileInput" multiple style="display: none;">
+
+    <script src="/js/app.js"></script>
+    <script src="/js/webrtc.js"></script>
+    <script src="/js/transfer.js"></script>
+    <script src="/js/ui.js"></script>
+</body>
+</html>
