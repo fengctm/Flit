@@ -27,6 +27,9 @@
     /** @type {boolean} 是否处于多选模式 */
     let multiSelectMode = false;
 
+    /** @type {Map<string, File[]>} 待发送文件队列 (deviceId -> files) */
+    const pendingFiles = new Map();
+
     /** @type {string|null} 当前设备自身 ID */
     let selfDeviceId = null;
 
@@ -522,6 +525,17 @@
         getAllDevices: getAllDevices,
         getSelectedDeviceIds: getSelectedDeviceIds,
 
+        // 触发待发送文件（WebRTC 连接建立后调用）
+        flushPendingFiles: function (deviceId) {
+            var files = pendingFiles.get(deviceId);
+            if (files && files.length > 0) {
+                pendingFiles.delete(deviceId);
+                files.forEach(function (file) {
+                    Flit.transfer.sendFile(file, deviceId);
+                });
+            }
+        },
+
         // 多选模式
         enterMultiSelectMode: enterMultiSelectMode,
         exitMultiSelectMode: exitMultiSelectMode,
@@ -536,10 +550,11 @@
                 return;
             }
             targetDeviceIds.forEach(function (targetId) {
+                // 存储待发送文件
+                pendingFiles.set(targetId, files);
                 const fileInfos = files.map(function (f) {
                     return { name: f.name, size: f.size };
                 });
-                // 发送平铺格式（服务端 json.Unmarshal 直接解析顶层字段）
                 send({
                     type: 'send_request',
                     to: targetId,

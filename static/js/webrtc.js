@@ -67,6 +67,8 @@
             if (pc.connectionState === 'connected') {
                 console.log('[WebRTC] 已与', deviceId, '建立连接');
                 Flit.ui.toast('与 ' + (Flit.getDevice(deviceId)?.name || deviceId) + ' 已建立连接', 'success');
+                // 触发待发送文件的传输
+                Flit.flushPendingFiles(deviceId);
             } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
                 console.log('[WebRTC] 与', deviceId, '的连接断开');
                 Flit.ui.toast('与 ' + (Flit.getDevice(deviceId)?.name || deviceId) + ' 的连接已断开', 'error');
