@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ui.js - UI 更新
  * 负责：设备卡片渲染、传输任务渲染、Toast 消息、接收请求弹窗、格式化工具
  */
@@ -428,8 +428,7 @@
         }
 
         // 显示弹窗
-        dialog.classList.add('visible');
-        dialog.style.display = 'flex';
+        dialog.showModal();
     }
 
     /**
@@ -438,8 +437,7 @@
     function hideReceiveRequestDialog() {
         var dialog = document.getElementById('sendRequestDialog');
         if (dialog) {
-            dialog.classList.remove('visible');
-            dialog.style.display = 'none';
+            dialog.close();
             dialog.removeAttribute('data-from-id');
         }
     }

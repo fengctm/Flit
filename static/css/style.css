@@ -1,4 +1,4 @@
-/* MD3 Design Tokens */
+﻿/* MD3 Design Tokens */
 :root {
     --md-sys-color-primary: #0061a4;
     --md-sys-color-on-primary: #ffffff;
@@ -460,7 +460,7 @@ body {
     overflow-y: auto;
 }
 
-.file-list-item {
+.request-file-item {
     display: flex;
     justify-content: space-between;
     padding: 4px 0;
@@ -469,7 +469,7 @@ body {
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.file-list-item:last-child {
+.request-file-item:last-child {
     border-bottom: none;
 }
 
@@ -641,3 +641,12 @@ body {
     font-size: 16px;
     font-weight: 500;
 }
+
+.request-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+

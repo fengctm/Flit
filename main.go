@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -9,10 +10,12 @@ import (
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	defaultPort := os.Getenv("PORT")
+	if defaultPort == "" {
+		defaultPort = "8080"
 	}
+	port := flag.String("port", defaultPort, "listen port (also settable via PORT env)")
+	flag.Parse()
 
 	hub := newHub()
 	go hub.run()
@@ -21,19 +24,19 @@ func main() {
 		serveWs(hub, w, r)
 	})
 
-	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/", fs)
+	Fs := http.FileServer(http.Dir("./static"))
+	http.Handle("/", Fs)
 
-	addr := "0.0.0.0:" + port
-	printLANIPs(port)
+	addr := "0.0.0.0:" + *port
+	printLANIps(*port)
 
-	log.Printf("Flit 局域网快传服务启动于 %s", addr)
+	log.Printf("Flit server started on %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatalf("服务启动失败: %v", err)
+		log.Fatalf("server failed: %v", err)
 	}
 }
 
-func printLANIPs(port string) {
+func printLANIps(port string) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return
